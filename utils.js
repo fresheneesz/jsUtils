@@ -514,7 +514,18 @@ var Utils = {
         $(mainSelector).live('mouseleave', function() {
             $(this).siblings(tipSelector).hide();
         });
-    }
+    },
+
+    // runs a function after an iframe node's content has loaded
+    // note, this almost certainly won't work for frames loaded from a different domain
+    onReady: function(iframeNode, f) {
+		var iframeDocument = iframeNode[0].contentWindow.document;
+		if(iframeDocument.readyState) {
+			f();
+		} else {
+			iframeNode.load(f);
+		}
+	}
 };
 
 // library for sending cross-domain calls requiring only a single file to be hosted on the other end and be passed to the frame that needs to communicate with it (xdEventReciever.html)
