@@ -22,7 +22,7 @@ var Utils = {
 
         var atotoffset=0;  // absolute element offset position from the top
         $.each($('body *:not(script)'),function(){   //get all elements
-            if ($(this).css('position') == 'absolute'){ // absolute?
+            if ($(this).css('position') == 'absolute' && $(this).css('display') !== 'none'){ // absolute and displayed?
                 atotoffset=getUpdatedHeight($(this), atotoffset);
             }
         });
