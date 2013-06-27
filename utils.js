@@ -1,43 +1,4 @@
 var Utils = {
-    getPageHeight: function() {
-        function getUpdatedHeight(element, originalMaxHeight) {
-            var top = element.offset().top;
-            if(typeof(top)!='undefined'){
-                var height = element.outerHeight();
-                return Math.max(originalMaxHeight, top+height);
-            } else {
-                return originalMaxHeight;
-            }
-        }
-
-        var maxhrel = 0;
-        if( ! $.browser.msie) {
-            maxhrel = $("html").outerHeight(); //get the page height
-        } else {
-            // in IE and chrome, the outerHeight of the html and body tags seem to be more like the window height
-            $('body').children(":not(script)").each(function(){ //get all body children
-                maxhrel=getUpdatedHeight($(this), maxhrel);
-            });
-        }
-
-        var atotoffset=0;  // absolute element offset position from the top
-        $.each($('body *:not(script)'),function(){   //get all elements
-            if ($(this).css('position') == 'absolute' && $(this).css('display') !== 'none'){ // absolute and displayed?
-                atotoffset=getUpdatedHeight($(this), atotoffset);
-            }
-        });
-
-        return Math.max(maxhrel, atotoffset);
-    },
-    preloadImage: function(imageURL)
-    {   if (document.images){
-            var preloadImage = new Image();
-            preloadImage.src = imageURL;
-            return preloadImage;
-        }
-
-        return undefined;
-    },
 
 	// aligns elements horizontally (along the vertical axis)
     alignHorizontal: function(cssSelector_list)
@@ -69,64 +30,76 @@ var Utils = {
             }
         });
     },
+    // returns true if all the keys in the 'needles' object are also keys in the 'haystack' object
+    allIn: function(needles, haystack) {
+        for(n in needles) {
+            if( ! (n in haystack)) {
+                return false;
+            }
+        }
+        return true;
+    },
+
+    absolutizeStaticUrl: function(url) {
+        if(url === null || url === undefined) return null;
+        var absolutizedUrl;
+        toolJS.simpleGetJax('/tools/sale2?hash=<%=request.getParameter("hash")%>&username=<%=request.getParameter("username")%>&expire_by=<%=request.getParameter("expire_by")%>&role=<%=request.getAttribute("roles")%>&action=absolutizeStaticUrl', {url: url},function(result) {
+            absolutizedUrl = result;
+        }, undefined, undefined, false);
+
+        return absolutizedUrl;
+    },
     
-    // properties of objects given as later arguments will overwrite the properties of earlier arguments if they conflict
-    objMerge: function() {
-        var args = Array.prototype.slice.call(arguments);
+    // compares the given members of each object, if any aren't equal, it returns false
+    // members can contain members with sub-members using dot notation (e.g. "member.submember.b")
+    compareObjectMembers: function(a,b, members) {
+        var getMember = function(o,m) {
+            var result = o;
+            var parts = m.split('.');
+            for(n in parts) {
+                result = result[parts[n]];
+            }
+            return result;
+        };
 
-        // returns true if obj contains rather than inherits property (or if obj doesn't have the hasOwnProperty method)
-        function containsOwnProperty(obj, property) {
-            return !obj.hasOwnProperty || obj.hasOwnProperty(property);
-        }
+        for(n in members) { var m = members[n];
 
-        var result = {};
-        for (var n in args) {
-            if (containsOwnProperty(args, n)) {
-                for (var attrname in args[n]) {
-                    if (containsOwnProperty(args[n], attrname)) {
-                        result[attrname] = args[n][attrname];
-                    }
-                }
+            if(getMember(a,m) !== getMember(b,m)) {
+                return false;
             }
         }
-        return result;
+        return true;
     },
+    
+    createScrim: function() {
+        $("body").append('<div id="scrimscreen" style="'
+                +'background-image:url(\'${staticBaseUrl}/images/scrim.png\');' // this is just a semi-transparent gray image
+                +'background-repeat: repeat;'
+                +'height:100%;'
+                +'width:100%;'
+                +'position: absolute;'
+                +'z-index: 10;'
+                +'top: 0;'
+            +'"></div>')
+                .append("");
+	},
 
-    // URL-encodes string
-    // version: 911.718
-    // discuss at: http://phpjs.org/functions/urlencode
-    // Original Author: Philip Peterson, reimplimented by Brett Zamir
-    urlencode: function(str)
-    {   str = (str+'').toString();
-        return encodeURIComponent(str)
-            .replace(/!/g, '%21').replace(/'/g, '%27').replace(/\(/g, '%28')
-            .replace(/\)/g, '%29').replace(/\*/g, '%2A').replace(/%20/g, '+');
-    },
-
-
-    // Decodes URL-encoded string
-    // version: 911.718
-    // discuss at: http://phpjs.org/functions/urldecode
-    // Original Author: Philip Peterson, reimplimented by Brett Zamir
-    urldecode: function(str) {
-        return decodeURIComponent(str).replace(/\+/g, '%20');
-    },
-
-    // Reads a page's GET URL variables and returns them as an associative array.
-    // Author: Uzbek Jon <%-- (found at: http://jquery-howto.blogspot.com/2009/09/get-url-parameters-values-with-jquery.html) --%>
-    // urldecode added by Billy Tetrud
-    getUrlVars: function() {
-        var vars = [];
-        var indexOfQuestionMark = window.location.href.indexOf('?');
-        if (indexOfQuestionMark !== -1) {
-            var params = window.location.href.slice(indexOfQuestionMark + 1).split('&');
-            for (var i = 0; i < params.length; i++) {
-                var param = params[i].split('=');
-                if (param.length == 2)
-                    vars[param[0]] = PlaydomUtils.urldecode(param[1]);
+    // request is canceled if another call is made before the request on the cancelObject has finished
+    // cancelList is the list of cancelObjects to cancel when the request is made (the cancelObject need not be put in that list)
+    cancelableAjax: function(cancelObject, cancelList, url, data, success, finallyFunc) {
+        cancelList.push(cancelObject);
+        for(n in cancelList) {
+            if(cancelList[n].request != undefined)
+            {   cancelList[n].request.abort();
             }
         }
-        return vars;
+
+        cancelObject.request = toolJS.simpleGetJax(url, data, function(data) {
+            cancelObject.request = undefined;
+            if(success != undefined) {
+                success(data);
+            }
+        }, finallyFunc);
     },
 
     dirname: function(path)
@@ -146,6 +119,46 @@ var Utils = {
         return path.replace(/\\/g,'/').replace(/\/[^\/]*\/?$/, '');
     },
 
+    fillUndefined: function(object, value, members) {
+        for(n in members) {
+            var k = members[n];
+            if(object[k] === undefined) {
+                object[k]=value;
+            }
+        }
+        return object;
+    },
+    getPageHeight: function() {
+        function getUpdatedHeight(element, originalMaxHeight) {
+            var top = element.offset().top;
+            if(typeof(top)!='undefined'){
+                var height = element.outerHeight();
+                return Math.max(originalMaxHeight, top+height);
+            } else {
+                return originalMaxHeight;
+            }
+        }
+
+        var maxhrel = 0;
+        if( ! $.browser.msie) {
+            maxhrel = $("html").outerHeight(); //get the page height
+        } else {
+            // in IE and chrome, the outerHeight of the html and body tags seem to be more like the window height
+            $('body').children(":not(script)").each(function(){ //get all body children
+                maxhrel=getUpdatedHeight($(this), maxhrel);
+            });
+        }
+
+        var atotoffset=0;  // absolute element offset position from the top
+        $.each($('body *:not(script)'),function(){   //get all elements
+            if ($(this).css('position') == 'absolute' && $(this).css('display') !== 'none'){ // absolute and displayed?
+                atotoffset=getUpdatedHeight($(this), atotoffset);
+            }
+        });
+
+        return Math.max(maxhrel, atotoffset);
+    },
+
     // cacheable getScript
     getScript: function(url, callback, cache) {
         $.ajax({
@@ -155,6 +168,45 @@ var Utils = {
             dataType: "script",
             cache: cache
         });
+    },
+
+    // this is only verified to work for scripts included using html script tags and jquery's getScript function
+    getCurScriptURL: function(callback) {
+        var scripts = document.getElementsByTagName("script");
+        var scriptURI = scripts[scripts.length - 1].src;
+
+        if (scriptURI != "")            // static include
+        {
+            callback(scriptURI);
+        } else if ($ != undefined)    // jQuery ajax
+        {
+            $(document).ajaxSuccess(function(e, xhr, s) {
+                callback(s.url);
+            });
+        } else {
+            throw("Could not resolve current script's URL");
+        }
+    },
+
+    // Reads a page's GET URL variables and returns them as an associative array.
+    // Author: Uzbek Jon <%-- (found at: http://jquery-howto.blogspot.com/2009/09/get-url-parameters-values-with-jquery.html) --%>
+    // urldecode added by Billy Tetrud
+    getUrlVars: function() {
+        var vars = [];
+        var indexOfQuestionMark = window.location.href.indexOf('?');
+        if (indexOfQuestionMark !== -1) {
+            var params = window.location.href.slice(indexOfQuestionMark + 1).split('&');
+            for (var i = 0; i < params.length; i++) {
+                var param = params[i].split('=');
+                if (param.length == 2)
+                    vars[param[0]] = PlaydomUtils.urldecode(param[1]);
+            }
+        }
+        return vars;
+    },
+
+    isRelativeUrl: function(url) {
+        return url.indexOf("://") === -1; 
     },
 
     loadScripts: function(scriptURLs, callback, cache) {
@@ -186,51 +238,112 @@ var Utils = {
             }, true /*cache*/);
         }
     },
+    
 
-    // this is only verified to work for scripts included using html script tags and jquery's getScript function
-    getCurScriptURL: function(callback) {
-        var scripts = document.getElementsByTagName("script");
-        var scriptURI = scripts[scripts.length - 1].src;
+    // runs a function after an iframe node's content has loaded
+    // note, this almost certainly won't work for frames loaded from a different domain
+    onReady: function(iframeNode, f) {
+        var windowDocument = iframeNode[0].contentWindow.document;
+        var iframeDocument = windowDocument?windowDocument : iframeNode[0].contentWindow.document;
 
-        if (scriptURI != "")            // static include
-        {
-            callback(scriptURI);
-        } else if ($ != undefined)    // jQuery ajax
-        {
-            $(document).ajaxSuccess(function(e, xhr, s) {
-                callback(s.url);
-            });
+        if(iframeDocument.readyState === 'complete') {
+            f();
         } else {
-            throw("Could not resolve current script's URL");
+            iframeNode.load(function() {
+				var n = 0;
+                var i = setInterval(function() {
+                    if(iframeDocument.readyState === 'complete') {
+                        f();
+                        clearInterval(i);
+                    } else {
+						n++;
+						if(n > 20)		// stop after too many times
+							clearInterval(i); 
+					}
+                }, 10);
+            });
         }
     },
-    
-    // sets a callback onto an event
-    // the callback for the event is removed after the first execution (so it doesn't happen next time the event happens)
-    // $node is a jquery object
-    // (is jquery 'once' or maybe 'one' similar to this?)
-    setSingleUseCallback: function($node, eventType, callback)
-    {   var eventHandler = function()
-        {   $node.unbind(eventType, eventHandler);
-            callback();
+	
+    // properties of objects given as later arguments will overwrite the properties of earlier arguments if they conflict
+    objMerge: function() {
+        var args = Array.prototype.slice.call(arguments);
 
-        };
+        // returns true if obj contains rather than inherits property (or if obj doesn't have the hasOwnProperty method)
+        function containsOwnProperty(obj, property) {
+            return !obj.hasOwnProperty || obj.hasOwnProperty(property);
+        }
 
-        $node.bind(eventType, eventHandler);
+        var result = {};
+        for (var n in args) {
+            if (containsOwnProperty(args, n)) {
+                for (var attrname in args[n]) {
+                    if (containsOwnProperty(args[n], attrname)) {
+                        result[attrname] = args[n][attrname];
+                    }
+                }
+            }
+        }
+        return result;
     },
-    
-    createScrim: function() {
-        $("body").append('<div id="scrimscreen" style="'
-                +'background-image:url(\'${staticBaseUrl}/images/scrim.png\');' // this is just a semi-transparent gray image
-                +'background-repeat: repeat;'
-                +'height:100%;'
-                +'width:100%;'
-                +'position: absolute;'
-                +'z-index: 10;'
-                +'top: 0;'
-            +'"></div>')
-                .append("");
-	},
+
+    // data should be a javascript object
+    postRequest: function(url, dataString, timeout/*=10000*/, dataType/*=jquery default*/) {
+        if(!timeout) timeout = 10000;
+
+        var failure=null;
+        var result = null;
+        var options = {
+            async: false,
+            processData: false,
+            cache: false,
+            timeout: timeout,
+
+            type: "POST",
+            url: url,
+            data: dataString,
+
+            error: function (data, status, exception) {
+                failure = data+" "+status+" "+exception;
+            },
+            success: function(returnedData) {
+                result = returnedData;
+            }
+        };
+        if(dataType != undefined) options.dataType = dataType;
+        
+        $.ajax(options);
+
+        if(failure !== null) {
+            throw failure;
+        }
+
+        return result;
+    },
+
+    // parameters should be an object where the keys are the parameters to replace, and their values are the values to replace them with
+    populateParameterizedString: function (rawUrl, parameters)
+    {   var result = rawUrl;
+        for(x in parameters) {
+            result = result.replace("$"+"{"+x+"}", parameters[x]);
+        }
+        return result;
+    },
+    preloadImage: function(imageURL)
+    {   if (document.images){
+            var preloadImage = new Image();
+            preloadImage.src = imageURL;
+            return preloadImage;
+        }
+
+        return undefined;
+    },
+    // parse a date in yyyy-mm-dd format
+    parseDate: function (dateString) {
+      var parts = dateString.match(/(\d+)/g);
+      // new Date(year, month [, date [, hours[, minutes[, seconds[, ms]]]]])
+      return new Date(parts[0], parts[1]-1, parts[2]); // months are 0-based
+    },
 	
 	// options can have members:
     // htmlClass
@@ -285,6 +398,28 @@ var Utils = {
 
         $('body').prepend(overlay);
     },
+
+    range: function(start,end) {
+        var result = [];
+        for(var n=start; n<=end; n++) {
+            result.push(n);
+        }
+        return result;
+    },
+    
+    // sets a callback onto an event
+    // the callback for the event is removed after the first execution (so it doesn't happen next time the event happens)
+    // $node is a jquery object
+    // (is jquery 'once' or maybe 'one' similar to this?)
+    setSingleUseCallback: function($node, eventType, callback)
+    {   var eventHandler = function()
+        {   $node.unbind(eventType, eventHandler);
+            callback();
+
+        };
+
+        $node.bind(eventType, eventHandler);
+    },
     
     
     simpleGetJax: function (url, data, success, finallyFunc, failure, async) {
@@ -310,75 +445,13 @@ var Utils = {
         });
     },
 
-    // data should be a javascript object
-    jsonPost: function(url, data, timeout/*=10000*/) {
-        return JSON.parse(toolJS.postRequest(url, JSON.stringify(data), timeout));
-    },
-
-    // data should be a javascript object
-    postRequest: function(url, dataString, timeout/*=10000*/, dataType/*=jquery default*/) {
-        if(!timeout) timeout = 10000;
-
-        var failure=null;
-        var result = null;
-        var options = {
-            async: false,
-            processData: false,
-            cache: false,
-            timeout: timeout,
-
-            type: "POST",
-            url: url,
-            data: dataString,
-
-            error: function (data, status, exception) {
-                failure = data+" "+status+" "+exception;
-            },
-            success: function(returnedData) {
-                result = returnedData;
-            }
-        };
-        if(dataType != undefined) options.dataType = dataType;
-        
-        $.ajax(options);
-
-        if(failure !== null) {
-            throw failure;
-        }
-
-        return result;
-    },
-
-    // request is canceled if another call is made before the request on the cancelObject has finished
-    // cancelList is the list of cancelObjects to cancel when the request is made (the cancelObject need not be put in that list)
-    cancelableAjax: function(cancelObject, cancelList, url, data, success, finallyFunc) {
-        cancelList.push(cancelObject);
-        for(n in cancelList) {
-            if(cancelList[n].request != undefined)
-            {   cancelList[n].request.abort();
-            }
-        }
-
-        cancelObject.request = toolJS.simpleGetJax(url, data, function(data) {
-            cancelObject.request = undefined;
-            if(success != undefined) {
-                success(data);
-            }
-        }, finallyFunc);
-    },
-
-    // parameters should be an object where the keys are the parameters to replace, and their values are the values to replace them with
-    populateParameterizedString: function (rawUrl, parameters)
-    {   var result = rawUrl;
-        for(x in parameters) {
-            result = result.replace("$"+"{"+x+"}", parameters[x]);
-        }
-        return result;
-    },
-    timeToString: function (time) {
-        if(time == null || time == undefined)
-            return null;
-        return time.year+'-'+time.month+'-'+time.day+' '+time.hours+':'+time.minutes;
+    setUpToolTip: function(mainSelector, tipSelector) {
+        $(mainSelector).live('mouseenter', function() {
+            $(this).siblings(tipSelector).show();
+        });
+        $(mainSelector).live('mouseleave', function() {
+            $(this).siblings(tipSelector).hide();
+        });
     },
 
     // creates a function that runs the 'callback' after being called with all the neccessary keys
@@ -396,40 +469,6 @@ var Utils = {
             };
         };
     },
-
-
-    // returns true if all the keys in the 'needles' object are also keys in the 'haystack' object
-    allIn: function(needles, haystack) {
-        for(n in needles) {
-            if( ! (n in haystack)) {
-                return false;
-            }
-        }
-        return true;
-    },
-
-    // converts the elements of an array to an object
-    // value is the value to put in
-    toObject: function(a, value) {
-        if(value == undefined) {
-            value = null;
-        }
-        var o = {};
-        for(var i=0;i<a.length;i++) {
-            o[a[i]]=value;
-        }
-        return o;
-    },
-
-    fillUndefined: function(object, value, members) {
-        for(n in members) {
-            var k = members[n];
-            if(object[k] === undefined) {
-                object[k]=value;
-            }
-        }
-        return object;
-    },
     // maps the 'values' list to a list of values depending on whether the value is in 'list' or not 
     setKeysFromArray: function(list, values, ifIn, ifNotIn) {
         var listObject = toolJS.toObject(list);
@@ -445,47 +484,43 @@ var Utils = {
         }
         return result;
     },
-    // compares the given members of each object, if any aren't equal, it returns false
-    // members can contain members with sub-members using dot notation (e.g. "member.submember.b")
-    compareObjectMembers: function(a,b, members) {
-        var getMember = function(o,m) {
-            var result = o;
-            var parts = m.split('.');
-            for(n in parts) {
-                result = result[parts[n]];
-            }
-            return result;
-        };
+    
+    timeToString: function (time) {
+        if(time == null || time == undefined)
+            return null;
+        return time.year+'-'+time.month+'-'+time.day+' '+time.hours+':'+time.minutes;
+    },
 
-        for(n in members) { var m = members[n];
-
-            if(getMember(a,m) !== getMember(b,m)) {
-                return false;
-            }
+    // converts the elements of an array to an object
+    // value is the value to put in
+    toObject: function(a, value) {
+        if(value == undefined) {
+            value = null;
         }
-        return true;
-    },
-
-    range: function(start,end) {
-        var result = [];
-        for(var n=start; n<=end; n++) {
-            result.push(n);
+        var o = {};
+        for(var i=0;i<a.length;i++) {
+            o[a[i]]=value;
         }
-        return result;
+        return o;
     },
 
-    absolutizeStaticUrl: function(url) {
-        if(url === null || url === undefined) return null;
-        var absolutizedUrl;
-        toolJS.simpleGetJax('/tools/sale2?hash=<%=request.getParameter("hash")%>&username=<%=request.getParameter("username")%>&expire_by=<%=request.getParameter("expire_by")%>&role=<%=request.getAttribute("roles")%>&action=absolutizeStaticUrl', {url: url},function(result) {
-            absolutizedUrl = result;
-        }, undefined, undefined, false);
-
-        return absolutizedUrl;
+    // URL-encodes string
+    // version: 911.718
+    // discuss at: http://phpjs.org/functions/urlencode
+    // Original Author: Philip Peterson, reimplimented by Brett Zamir
+    urlencode: function(str)
+    {   str = (str+'').toString();
+        return encodeURIComponent(str)
+            .replace(/!/g, '%21').replace(/'/g, '%27').replace(/\(/g, '%28')
+            .replace(/\)/g, '%29').replace(/\*/g, '%2A').replace(/%20/g, '+');
     },
 
-    isRelativeUrl: function(url) {
-        return url.indexOf("oo") === -1;  
+    // Decodes URL-encoded string
+    // version: 911.718
+    // discuss at: http://phpjs.org/functions/urldecode
+    // Original Author: Philip Peterson, reimplimented by Brett Zamir
+    urldecode: function(str) {
+        return decodeURIComponent(str).replace(/\+/g, '%20');
     },
 
     urlExists: function(url) {
@@ -499,33 +534,7 @@ var Utils = {
             }
         });
         return result;
-    },
-
-    // parse a date in yyyy-mm-dd format
-    parseDate: function (dateString) {
-      var parts = dateString.match(/(\d+)/g);
-      // new Date(year, month [, date [, hours[, minutes[, seconds[, ms]]]]])
-      return new Date(parts[0], parts[1]-1, parts[2]); // months are 0-based
-    },
-    setUpToolTip: function(mainSelector, tipSelector) {
-        $(mainSelector).live('mouseenter', function() {
-            $(this).siblings(tipSelector).show();
-        });
-        $(mainSelector).live('mouseleave', function() {
-            $(this).siblings(tipSelector).hide();
-        });
-    },
-
-    // runs a function after an iframe node's content has loaded
-    // note, this almost certainly won't work for frames loaded from a different domain
-    onReady: function(iframeNode, f) {
-		var iframeDocument = iframeNode[0].contentWindow.document;
-		if(iframeDocument.readyState) {
-			f();
-		} else {
-			iframeNode.load(f);
-		}
-	}
+    }
 };
 
 // library for sending cross-domain calls requiring only a single file to be hosted on the other end and be passed to the frame that needs to communicate with it (xdEventReciever.html)
